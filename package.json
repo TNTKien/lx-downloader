@@ -1,0 +1,28 @@
+{
+  "name": "lx-downloader",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "lx-downloader": "src/cli.ts"
+  },
+  "scripts": {
+    "start": "bun run src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "bun build --compile --minify --sourcemap ./src/cli.ts --outfile dist/lx-downloader",
+    "build:win": "bun build --compile --target=bun-windows-x64 --minify --sourcemap ./src/cli.ts --outfile dist/lx-downloader-win.exe",
+    "build:linux": "bun build --compile --target=bun-linux-x64 --minify --sourcemap ./src/cli.ts --outfile dist/lx-downloader-linux",
+    "build:mac": "bun build --compile --target=bun-darwin-arm64 --minify --sourcemap ./src/cli.ts --outfile dist/lx-downloader-mac"
+  },
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "cheerio": "^1.1.2",
+    "commander": "^14.0.1"
+  },
+  "devDependencies": {
+    "@types/archiver": "^6.0.3",
+    "@types/bun": "latest",
+    "@types/node": "^24.5.2",
+    "typescript": "^5.9.2"
+  }
+}
