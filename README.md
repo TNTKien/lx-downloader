@@ -6,6 +6,13 @@ CLI tải truyện từ `https://lxmanga.space`.
 
 Cài Bun: https://bun.com/docs/installation
 
+``` bash
+git clone https://github.com/TNTKien/lx-downloader.git
+```
+```bash
+cd lx-downloader
+```
+
 
 ## Usage
 
