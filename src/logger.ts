@@ -67,6 +67,21 @@ function write(message: string): void {
   process.stdout.write(`${message}\n`);
 }
 
+function writeDetails(details?: string | string[]): void {
+  if (!details) {
+    return;
+  }
+
+  const lines = Array.isArray(details) ? details : [details];
+  for (const line of lines) {
+    if (!line) {
+      continue;
+    }
+
+    write(`           ${gray}↳ ${line}${reset}`);
+  }
+}
+
 export const log = {
   story(title: string, chapterCount: number): void {
     write(`${timestamp()} ${ICONS.story} ${bold}${title}${reset} ${dim}(${chapterCount} chapter)${reset}`);
@@ -99,10 +114,11 @@ export const log = {
     }
   },
 
-  retry(what: string, attempt: number, maxAttempts: number, delayMs: number): void {
+  retry(what: string, attempt: number, maxAttempts: number, delayMs: number, details?: string | string[]): void {
     write(
       `${timestamp()} ${ICONS.retry} ${what} ${dim}(lan ${attempt}/${maxAttempts}, doi ${formatDuration(delayMs)})${reset}`,
     );
+    writeDetails(details);
   },
 
   archiveStart(name: string): void {
@@ -113,20 +129,24 @@ export const log = {
     write(`${timestamp()} ${ICONS.done} Nen xong: ${name}`);
   },
 
-  error(message: string): void {
+  error(message: string, details?: string | string[]): void {
     write(`${timestamp()} ${ICONS.error} ${red}${message}${reset}`);
+    writeDetails(details);
   },
 
-  warn(message: string): void {
+  warn(message: string, details?: string | string[]): void {
     write(`${timestamp()} ${ICONS.warn} ${yellow}${message}${reset}`);
+    writeDetails(details);
   },
 
-  info(message: string): void {
+  info(message: string, details?: string | string[]): void {
     write(`${timestamp()} ${ICONS.info} ${message}`);
+    writeDetails(details);
   },
 
-  skip(message: string): void {
+  skip(message: string, details?: string | string[]): void {
     write(`${timestamp()} ${ICONS.skip} ${gray}${message}${reset}`);
+    writeDetails(details);
   },
 
   /** Final summary after full story download */

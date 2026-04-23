@@ -27,6 +27,10 @@ const DEFAULT_RETRY: RetryConfig = {
   chapterFetchAttempts: 3,
 };
 
+function formatErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function getRetryDelay(attempt: number, config: RetryConfig): number {
   // Exponential backoff with jitter: base * 2^(attempt-1) + random jitter
   const exponential = config.baseDelayMs * 2 ** (attempt - 1);
@@ -51,15 +55,28 @@ async function downloadBinary(
       return;
     } catch (error) {
       lastError = error;
+      const errorMessage = formatErrorMessage(error);
+
       if (attempt < config.maxAttempts) {
         const delay = getRetryDelay(attempt, config);
-        log.retry(label, attempt, config.maxAttempts, Math.round(delay));
+        log.retry(label, attempt, config.maxAttempts, Math.round(delay), [
+          `ly do: ${errorMessage}`,
+          `url: ${url}`,
+          `dich: ${outputPath}`,
+        ]);
         await Bun.sleep(delay);
       }
     }
   }
 
-  throw lastError instanceof Error ? lastError : new Error(`Khong tai duoc anh ${url}`);
+  const finalErrorMessage = formatErrorMessage(lastError);
+  log.error(`Khong tai duoc ${label} sau ${config.maxAttempts} lan`, [
+    `ly do cuoi: ${finalErrorMessage}`,
+    `url: ${url}`,
+    `dich: ${outputPath}`,
+  ]);
+
+  throw new Error(`Khong tai duoc ${label}: ${finalErrorMessage}`);
 }
 
 async function fetchChapterDataWithRetry(
@@ -74,15 +91,26 @@ async function fetchChapterDataWithRetry(
       return await fetchChapterData(chapterUrl);
     } catch (error) {
       lastError = error;
+      const errorMessage = formatErrorMessage(error);
+
       if (attempt < config.chapterFetchAttempts) {
         const delay = getRetryDelay(attempt, config);
-        log.retry(label, attempt, config.chapterFetchAttempts, Math.round(delay));
+        log.retry(label, attempt, config.chapterFetchAttempts, Math.round(delay), [
+          `ly do: ${errorMessage}`,
+          `chapter: ${chapterUrl}`,
+        ]);
         await Bun.sleep(delay);
       }
     }
   }
 
-  throw lastError instanceof Error ? lastError : new Error(`Khong tai duoc chapter ${chapterUrl}`);
+  const finalErrorMessage = formatErrorMessage(lastError);
+  log.error(`Khong tai duoc du lieu chapter sau ${config.chapterFetchAttempts} lan`, [
+    `chapter: ${chapterUrl}`,
+    `ly do cuoi: ${finalErrorMessage}`,
+  ]);
+
+  throw new Error(`Khong tai duoc chapter ${chapterUrl}: ${finalErrorMessage}`);
 }
 
 // --- Concurrency runner ---
@@ -235,8 +263,8 @@ async function downloadFullStory(
       await saveStoryMeta(storyDir, storyMeta);
     } catch (error) {
       failCount += 1;
-      const message = error instanceof Error ? error.message : String(error);
-      log.error(`Chapter ${i + 1}: ${message}`);
+      const message = formatErrorMessage(error);
+      log.error(`Chapter ${i + 1}: ${message}`, [`chapter: ${chapterUrl}`]);
       // Continue to next chapter instead of aborting the whole story
       continue;
     }
