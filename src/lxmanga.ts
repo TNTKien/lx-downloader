@@ -6,6 +6,8 @@ import { curlText } from "./curl";
 import type { ChapterData, InputTarget, StoryIndex } from "./types";
 
 const SITE_ORIGIN = "https://lxmanga.space";
+const IMAGE_HOST_PATTERN = /^https?:\/\/s\d+\.lxmanga\.\w+\//i;
+const IMAGE_EXTENSION_PATTERN = /\.(jpg|jpeg|png|webp|gif|avif)(\?|$)/i;
 
 function normalizeUrl(input: string): URL {
   const url = new URL(input.trim());
@@ -60,6 +62,94 @@ function prettifySlug(slug: string): string {
 
 function getMetaContent($: cheerio.CheerioAPI, name: string): string | null {
   return $(name).attr("content")?.trim() ?? null;
+}
+
+function isChapterImageUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url) && IMAGE_EXTENSION_PATTERN.test(url) && IMAGE_HOST_PATTERN.test(url);
+}
+
+function dedupeImageUrls(imageUrls: string[]): string[] {
+  const seen = new Set<string>();
+
+  return imageUrls.filter((imageUrl) => {
+    if (seen.has(imageUrl)) {
+      return false;
+    }
+
+    seen.add(imageUrl);
+    return true;
+  });
+}
+
+function extractEncodedImageMatrix(html: string): number[][] | null {
+  const match = html.match(/\b_u\s*=\s*(\[\[[\s\S]*?\]\])/);
+  if (!match) {
+    return null;
+  }
+
+  const parsed: unknown = JSON.parse(match[1]);
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    return null;
+  }
+
+  const matrix: number[][] = [];
+  for (const row of parsed) {
+    if (!Array.isArray(row)) {
+      return null;
+    }
+
+    const codes: number[] = [];
+    for (const value of row) {
+      if (typeof value !== "number" || !Number.isFinite(value)) {
+        return null;
+      }
+
+      codes.push(value);
+    }
+
+    matrix.push(codes);
+  }
+
+  return matrix;
+}
+
+function xorDecodeImageUrl(codes: number[], key: string): string {
+  return codes
+    .map((code, index) => String.fromCharCode(code ^ key.charCodeAt(index % key.length)))
+    .join("");
+}
+
+function extractDecodedImageUrls(html: string, $: cheerio.CheerioAPI): string[] {
+  const actionToken = getMetaContent($, 'meta[name="action_token"]');
+  if (!actionToken) {
+    return [];
+  }
+
+  const encodedMatrix = extractEncodedImageMatrix(html);
+  if (!encodedMatrix) {
+    return [];
+  }
+
+  return dedupeImageUrls(
+    encodedMatrix
+      .map((codes) => xorDecodeImageUrl(codes, actionToken).trim())
+      .filter((imageUrl) => isChapterImageUrl(imageUrl)),
+  );
+}
+
+function extractLegacyImageUrls($: cheerio.CheerioAPI): string[] {
+  const imageUrls: string[] = [];
+
+  $("[data-src]").each((_, element) => {
+    const dataSrc = $(element).attr("data-src")?.trim();
+    if (!dataSrc || !isChapterImageUrl(dataSrc)) {
+      return;
+    }
+
+    imageUrls.push(dataSrc);
+  });
+
+  return dedupeImageUrls(imageUrls);
 }
 
 function extractStoryTitle($: cheerio.CheerioAPI, fallbackSlug: string): string {
@@ -168,37 +258,10 @@ export async function fetchChapterData(chapterUrl: string): Promise<ChapterData>
   const [, storySlug, chapterSlug] = getSegments(chapterUrlObject);
   const titleInfo = extractChapterTitleAndStory($, storySlug, chapterSlug);
 
-  const imageUrls: string[] = [];
-  const seen = new Set<string>();
-  $("[data-src]").each((_, element) => {
-    const dataSrc = $(element).attr("data-src")?.trim();
-    if (!dataSrc) {
-      return;
-    }
+  const imageUrls = extractDecodedImageUrls(html, $);
+  const finalImageUrls = imageUrls.length > 0 ? imageUrls : extractLegacyImageUrls($);
 
-    if (!/^https?:\/\//i.test(dataSrc)) {
-      return;
-    }
-
-    if (!/\.(jpg|jpeg|png|webp|gif|avif)(\?|$)/i.test(dataSrc)) {
-      return;
-    }
-
-    // Only allow images from the lxmanga CDN (s3.lxmanga.xyz, s4.lxmanga.xyz, etc.)
-    // This filters out site UI assets like lxmanga.space/imgs/gifs/topv3.gif
-    if (!/^https?:\/\/s\d+\.lxmanga\.\w+\//i.test(dataSrc)) {
-      return;
-    }
-
-    if (seen.has(dataSrc)) {
-      return;
-    }
-
-    seen.add(dataSrc);
-    imageUrls.push(dataSrc);
-  });
-
-  if (imageUrls.length === 0) {
+  if (finalImageUrls.length === 0) {
     throw new Error(`Khong tim thay anh nao trong ${chapterUrl}`);
   }
 
@@ -209,7 +272,7 @@ export async function fetchChapterData(chapterUrl: string): Promise<ChapterData>
     chapterTitle: titleInfo.chapterTitle,
     chapterSlug,
     chapterUrl: chapterUrlObject.toString(),
-    imageUrls,
+    imageUrls: finalImageUrls,
   };
 }
 

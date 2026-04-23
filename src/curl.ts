@@ -1,11 +1,18 @@
+import { rename, rm } from "node:fs/promises";
+
 interface CurlOptions {
   url: string;
   headers?: Record<string, string>;
   outputPath?: string;
+  failOnHttpError?: boolean;
 }
 
 function buildCurlArgs(options: CurlOptions): string[] {
   const args = ["--silent", "--show-error", "--location", "--compressed"];
+
+  if (options.failOnHttpError) {
+    args.push("--fail");
+  }
 
   for (const [name, value] of Object.entries(options.headers ?? {})) {
     args.push("-H", `${name}: ${value}`);
@@ -44,8 +51,19 @@ export async function curlText(url: string, headers?: Record<string, string>): P
 }
 
 export async function curlDownload(url: string, outputPath: string, headers?: Record<string, string>): Promise<void> {
-  const result = await runCurl({ url, headers, outputPath });
-  if (result.exitCode !== 0) {
-    throw new Error(result.stderr.trim() || `curl loi khi tai ${url}`);
+  const tempOutputPath = `${outputPath}.part`;
+
+  await rm(tempOutputPath, { force: true });
+
+  try {
+    const result = await runCurl({ url, headers, outputPath: tempOutputPath, failOnHttpError: true });
+    if (result.exitCode !== 0) {
+      throw new Error(result.stderr.trim() || `curl loi khi tai ${url}`);
+    }
+
+    await rename(tempOutputPath, outputPath);
+  } catch (error) {
+    await rm(tempOutputPath, { force: true });
+    throw error;
   }
 }
